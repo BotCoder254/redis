@@ -42,11 +42,21 @@ const LandingPage = () => {
 
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const posts = snapshot.docs
-          .map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            height: Math.floor(Math.random() * (450 - 200 + 1) + 200)
-          }))
+          .map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              imageUrls: data.imageUrls || [],
+              imageUrl: data.imageUrl || null,
+              createdAt: data.createdAt ? data.createdAt.toDate() : new Date(),
+              authorName: data.authorName || 'Anonymous',
+              views: data.views || 0,
+              likes: data.likes || 0,
+              comments: data.comments || [],
+              tags: data.tags || []
+            };
+          })
           // Client-side sorting by views
           .sort((a, b) => (b.views || 0) - (a.views || 0))
           // Take only the top 12 posts
@@ -182,12 +192,16 @@ const LandingPage = () => {
                 to={`/post/${post.id}`}
                 className="block bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow"
               >
-                <div className="relative group">
+                <div className="relative group aspect-w-16 aspect-h-9">
                   <img
-                    src={post.imageUrl || `https://source.unsplash.com/random/${post.id}`}
+                    src={post.imageUrls?.[0] || post.imageUrl || `https://source.unsplash.com/random/${post.id}?blog,article`}
                     alt={post.title}
-                    className="w-full object-cover"
-                    style={{ height: `${post.height}px` }}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    loading="lazy"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = `https://source.unsplash.com/random/${post.id}?blog,article`;
+                    }}
                   />
                   <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-300" />
                 </div>
@@ -202,7 +216,9 @@ const LandingPage = () => {
                       <span className="ml-2 text-sm font-medium text-gray-700">{post.authorName}</span>
                     </div>
                     <span className="text-sm text-gray-500">
-                      {post.createdAt?.toDate().toLocaleDateString()}
+                      {post.createdAt instanceof Date 
+                        ? post.createdAt.toLocaleDateString()
+                        : post.createdAt?.toDate?.()?.toLocaleDateString() || 'No date'}
                     </span>
                   </div>
 
