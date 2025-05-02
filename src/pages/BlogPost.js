@@ -31,6 +31,9 @@ import {
 import ImageSlider from '../components/ImageSlider';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 
 const BlogPost = () => {
   const { postId } = useParams();
@@ -51,9 +54,14 @@ const BlogPost = () => {
         const postSnap = await getDoc(postRef);
 
         if (postSnap.exists()) {
-          const postData = { id: postSnap.id, ...postSnap.data() };
+          const postData = { 
+            id: postSnap.id, 
+            ...postSnap.data(),
+            likedBy: postSnap.data().likedBy || [],
+            likes: postSnap.data().likes || 0
+          };
           setPost(postData);
-          setIsLiked(postData.likedBy?.includes(user?.uid));
+          setIsLiked(postData.likedBy?.includes(user?.uid) || false);
           fetchRelatedPosts(postData.category);
           setShareUrl(window.location.href);
 
@@ -76,13 +84,27 @@ const BlogPost = () => {
 
     fetchPost();
 
+    // Set up real-time listener for post updates
+    const unsubscribePost = onSnapshot(doc(db, 'posts', postId), (doc) => {
+      if (doc.exists()) {
+        const postData = {
+          id: doc.id,
+          ...doc.data(),
+          likedBy: doc.data().likedBy || [],
+          likes: doc.data().likes || 0
+        };
+        setPost(postData);
+        setIsLiked(postData.likedBy?.includes(user?.uid) || false);
+      }
+    });
+
     // Set up real-time listener for comments
     const commentsQuery = query(
       collection(db, 'posts', postId, 'comments'),
       orderBy('createdAt', 'desc')
     );
 
-    const unsubscribe = onSnapshot(commentsQuery, (snapshot) => {
+    const unsubscribeComments = onSnapshot(commentsQuery, (snapshot) => {
       const commentsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
@@ -91,7 +113,10 @@ const BlogPost = () => {
       setComments(commentsData);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribePost();
+      unsubscribeComments();
+    };
   }, [postId, user]);
 
   const fetchRelatedPosts = async (category) => {
@@ -119,13 +144,28 @@ const BlogPost = () => {
 
     try {
       const postRef = doc(db, 'posts', postId);
-      await updateDoc(postRef, {
-        likes: isLiked ? post.likes - 1 : post.likes + 1,
-        likedBy: isLiked 
-          ? arrayRemove(user.uid)
-          : arrayUnion(user.uid)
-      });
-      setIsLiked(!isLiked);
+      const postSnap = await getDoc(postRef);
+      
+      if (postSnap.exists()) {
+        const currentLikes = postSnap.data().likes || 0;
+        const likedBy = postSnap.data().likedBy || [];
+        
+        await updateDoc(postRef, {
+          likes: isLiked ? currentLikes - 1 : currentLikes + 1,
+          likedBy: isLiked ? arrayRemove(user.uid) : arrayUnion(user.uid)
+        });
+
+        // Update local state
+        setPost(prev => ({
+          ...prev,
+          likes: isLiked ? currentLikes - 1 : currentLikes + 1,
+          likedBy: isLiked 
+            ? likedBy.filter(id => id !== user.uid)
+            : [...likedBy, user.uid]
+        }));
+        
+        setIsLiked(!isLiked);
+      }
     } catch (err) {
       console.error('Error updating like:', err);
     }
@@ -247,10 +287,60 @@ const BlogPost = () => {
             </div>
 
             {/* Post Content */}
-            <div className="prose max-w-none mb-12">
+            <div className="prose prose-lg max-w-none mb-12">
               <ReactMarkdown 
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm, remarkBreaks]}
+                rehypePlugins={[rehypeRaw, rehypeSanitize]}
                 className="markdown-content"
+                components={{
+                  h1: ({node, ...props}) => (
+                    <h1 {...props} className="text-4xl font-bold mb-6 mt-8 text-gray-900 leading-tight" />
+                  ),
+                  h2: ({node, ...props}) => (
+                    <h2 {...props} className="text-2xl font-bold mb-4 mt-6 text-gray-900 leading-tight" />
+                  ),
+                  h3: ({node, ...props}) => (
+                    <h3 {...props} className="text-xl font-bold mb-3 mt-5 text-gray-900 leading-tight" />
+                  ),
+                  p: ({node, ...props}) => (
+                    <p {...props} className="mb-4 text-base leading-relaxed text-gray-700 whitespace-pre-wrap" />
+                  ),
+                  ul: ({node, ...props}) => (
+                    <ul {...props} className="list-disc pl-6 mb-4 space-y-2 text-gray-700" />
+                  ),
+                  ol: ({node, ...props}) => (
+                    <ol {...props} className="list-decimal pl-6 mb-4 space-y-2 text-gray-700" />
+                  ),
+                  li: ({node, ...props}) => (
+                    <li {...props} className="mb-2 text-gray-700 leading-relaxed" />
+                  ),
+                  blockquote: ({node, ...props}) => (
+                    <blockquote {...props} className="border-l-4 border-indigo-500 pl-4 italic my-6 text-gray-600 bg-gray-50 py-3 pr-4 rounded-r" />
+                  ),
+                  img: ({node, ...props}) => (
+                    <img 
+                      {...props} 
+                      className="w-full rounded-lg shadow-lg my-6"
+                      loading="lazy"
+                    />
+                  ),
+                  a: ({node, ...props}) => (
+                    <a 
+                      {...props} 
+                      className="text-indigo-600 hover:text-indigo-800 underline"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  ),
+                  pre: ({node, ...props}) => (
+                    <pre {...props} className="bg-gray-800 text-white p-4 rounded-lg overflow-x-auto my-6 whitespace-pre" />
+                  ),
+                  code: ({node, inline, ...props}) => (
+                    inline ? 
+                      <code {...props} className="bg-gray-100 text-gray-800 px-1.5 py-0.5 font-mono text-sm rounded whitespace-pre-wrap" /> :
+                      <code {...props} className="block bg-gray-800 text-white p-4 rounded-lg overflow-x-auto whitespace-pre" />
+                  )
+                }}
               >
                 {post.content}
               </ReactMarkdown>
@@ -260,11 +350,12 @@ const BlogPost = () => {
             <div className="flex items-center space-x-4 mb-12">
               <button
                 onClick={handleLike}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-md ${
+                disabled={!user}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all duration-200 ${
                   isLiked
-                    ? 'text-red-600 bg-red-50'
+                    ? 'text-red-600 bg-red-50 hover:bg-red-100'
                     : 'text-gray-600 bg-gray-50 hover:bg-gray-100'
-                }`}
+                } ${!user ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 {isLiked ? (
                   <HiHeart className="h-5 w-5" />
@@ -275,7 +366,7 @@ const BlogPost = () => {
               </button>
               <button
                 onClick={handleShare}
-                className="flex items-center space-x-2 px-4 py-2 rounded-md text-gray-600 bg-gray-50 hover:bg-gray-100"
+                className="flex items-center space-x-2 px-4 py-2 rounded-md text-gray-600 bg-gray-50 hover:bg-gray-100 transition-all duration-200"
               >
                 <HiShare className="h-5 w-5" />
                 <span>Share</span>

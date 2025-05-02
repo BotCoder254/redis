@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HiUpload, HiCheck, HiX, HiLightBulb } from 'react-icons/hi';
+import { HiUpload, HiCheck, HiX, HiLightBulb, HiEye, HiPencil } from 'react-icons/hi';
 import { useAuth } from '../../context/AuthContext';
 import { db, storage } from '../../config/firebase';
 import { 
@@ -13,6 +13,11 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useNavigate } from 'react-router-dom';
 import { generateContentSuggestions, generateBlogOutline } from '../../services/aiService';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 
 const CATEGORIES = [
   'Technology',
@@ -43,6 +48,7 @@ const NewPost = () => {
   const [generationError, setGenerationError] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [generatedContents, setGeneratedContents] = useState([]);
+  const [isPreview, setIsPreview] = useState(false);
 
   const handleImageChange = (e) => {
     const files = Array.from(e.target.files);
@@ -239,6 +245,27 @@ const NewPost = () => {
     }
   };
 
+  const formatMarkdown = (text) => {
+    // Format headings
+    text = text.replace(/^# /gm, '# ');
+    text = text.replace(/^## /gm, '## ');
+    text = text.replace(/^### /gm, '### ');
+    
+    // Format lists
+    text = text.replace(/^\* /gm, '* ');
+    text = text.replace(/^- /gm, '- ');
+    
+    // Ensure proper line breaks
+    text = text.replace(/\n\n/g, '\n\n');
+    
+    return text;
+  };
+
+  const handleContentChange = (e) => {
+    const formattedContent = formatMarkdown(e.target.value);
+    setContent(formattedContent);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -432,24 +459,76 @@ const NewPost = () => {
           )}
         </div>
 
-        {/* Content Section */}
+        {/* Content Section with Preview */}
         <div>
-          <label htmlFor="content" className="block text-sm font-medium text-gray-700">
-            Content *
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label htmlFor="content" className="block text-sm font-medium text-gray-700">
+              Content *
+            </label>
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setIsPreview(!isPreview)}
+                className="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                {isPreview ? (
+                  <>
+                    <HiPencil className="h-4 w-4 mr-1" />
+                    Edit
+                  </>
+                ) : (
+                  <>
+                    <HiEye className="h-4 w-4 mr-1" />
+                    Preview
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
           <div className="mt-1 relative">
-            <textarea
-              id="content"
-              rows="12"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="Write your blog post content here..."
-              required
-            />
+            {isPreview ? (
+              <div className="prose prose-lg max-w-none mb-12 p-4 border rounded-lg min-h-[300px] bg-gray-50">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkBreaks]}
+                  rehypePlugins={[rehypeRaw, rehypeSanitize]}
+                  className="markdown-content"
+                >
+                  {content || '_No content yet..._'}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              <textarea
+                id="content"
+                rows="12"
+                value={content}
+                onChange={handleContentChange}
+                className="mt-1 block w-full border border-gray-300 rounded-lg shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm font-mono"
+                placeholder={`Write your blog post content here using Markdown...
+
+# Heading 1
+## Heading 2
+### Heading 3
+
+* Bullet point
+* Another point
+
+1. Numbered item
+2. Another item
+
+**Bold text**
+*Italic text*
+
+> Blockquote
+
+[Link text](url)
+`}
+                required
+              />
+            )}
           </div>
           <p className="mt-2 text-sm text-gray-500">
-            Use the AI suggestions above to help structure your content. You can append or replace the content with generated suggestions.
+            Use Markdown formatting for headings (#), lists (*, -), bold (**), italic (*), and more. Toggle preview to see how it looks.
           </p>
         </div>
 
