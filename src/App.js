@@ -9,6 +9,7 @@ import DashboardLayout from './components/dashboard/DashboardLayout';
 import NewPost from './pages/dashboard/NewPost';
 import MyPosts from './pages/dashboard/MyPosts';
 import Analytics from './pages/dashboard/Analytics';
+import BlogPost from './pages/BlogPost';
 
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
@@ -39,6 +40,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/post/:postId" element={<BlogPost />} />
 
           {/* Protected Routes */}
           <Route

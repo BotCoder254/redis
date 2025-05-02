@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { FiSearch, FiGithub, FiTwitter, FiLinkedin } from 'react-icons/fi';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { HiEye, HiHeart, HiChat } from 'react-icons/hi';
 
 const LandingPage = () => {
   const [trendingPosts, setTrendingPosts] = useState([]);
@@ -177,7 +178,10 @@ const LandingPage = () => {
               viewport={{ once: true }}
               className="break-inside-avoid mb-4"
             >
-              <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+              <Link
+                to={`/post/${post.id}`}
+                className="block bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow"
+              >
                 <div className="relative group">
                   <img
                     src={post.imageUrl || `https://source.unsplash.com/random/${post.id}`}
@@ -187,26 +191,61 @@ const LandingPage = () => {
                   />
                   <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-300" />
                 </div>
-                <div className="p-4">
-                  <h3 className="text-lg font-semibold mb-2 line-clamp-2">{post.title}</h3>
-                  <p className="text-gray-600 text-sm line-clamp-3 mb-4">{post.content}</p>
-                  <div className="flex items-center justify-between">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center">
                       <img
                         src={post.authorImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(post.authorName || 'User')}`}
                         alt={post.authorName}
                         className="h-8 w-8 rounded-full"
                       />
-                      <span className="ml-2 text-sm text-gray-500">{post.authorName}</span>
+                      <span className="ml-2 text-sm font-medium text-gray-700">{post.authorName}</span>
                     </div>
-                    <div className="flex items-center space-x-2 text-sm text-gray-500">
-                      <span>{post.views || 0} views</span>
-                      <span>•</span>
-                      <span>{post.likes || 0} likes</span>
+                    <span className="text-sm text-gray-500">
+                      {post.createdAt?.toDate().toLocaleDateString()}
+                    </span>
+                  </div>
+
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2 line-clamp-2">
+                    {post.title}
+                  </h3>
+                  
+                  <p className="text-gray-600 mb-4 line-clamp-3">
+                    {post.content}
+                  </p>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4 text-sm text-gray-500">
+                      <div className="flex items-center">
+                        <HiEye className="h-4 w-4 mr-1" />
+                        {post.views || 0}
+                      </div>
+                      <div className="flex items-center">
+                        <HiHeart className="h-4 w-4 mr-1" />
+                        {post.likes || 0}
+                      </div>
+                      <div className="flex items-center">
+                        <HiChat className="h-4 w-4 mr-1" />
+                        {post.comments?.length || 0}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {post.tags?.slice(0, 2).map((tag, index) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                      {post.tags?.length > 2 && (
+                        <span className="text-xs text-gray-500">+{post.tags.length - 2}</span>
+                      )}
                     </div>
                   </div>
                 </div>
-              </div>
+              </Link>
             </motion.div>
           ))}
         </div>
