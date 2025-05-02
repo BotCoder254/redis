@@ -3,31 +3,31 @@ import {
   collection, 
   addDoc, 
   getDocs, 
-  query, 
-  where, 
+  deleteDoc, 
+  doc, 
+  updateDoc, 
+  arrayUnion, 
+  arrayRemove, 
+  query,
+  where,
   orderBy,
-  serverTimestamp,
-  doc,
-  deleteDoc,
-  updateDoc,
-  increment,
-  arrayUnion,
-  arrayRemove
+  serverTimestamp
 } from 'firebase/firestore';
 
 export const addComment = async (postId, commentData, parentId = null) => {
   try {
-    const commentsRef = collection(db, 'posts', postId, 'comments');
+    const commentRef = collection(db, 'posts', postId, 'comments');
     const newComment = {
       ...commentData,
       parentId,
       createdAt: serverTimestamp(),
       likes: 0,
-      likedBy: []
+      likedBy: [],
+      replies: [],
+      isExpanded: true
     };
-    
-    const docRef = await addDoc(commentsRef, newComment);
-    return docRef.id;
+    const docRef = await addDoc(commentRef, newComment);
+    return { id: docRef.id, ...newComment };
   } catch (error) {
     console.error('Error adding comment:', error);
     throw error;
@@ -36,27 +36,38 @@ export const addComment = async (postId, commentData, parentId = null) => {
 
 export const getComments = async (postId) => {
   try {
-    const q = query(
-      collection(db, 'posts', postId, 'comments'),
-      orderBy('createdAt', 'desc')
-    );
-    
+    const commentsRef = collection(db, 'posts', postId, 'comments');
+    const q = query(commentsRef, orderBy('createdAt', 'desc'));
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate().toLocaleString()
-    }));
+    
+    const comments = {};
+    querySnapshot.docs.forEach(doc => {
+      comments[doc.id] = { id: doc.id, ...doc.data() };
+    });
+
+    // Build comment tree
+    const commentTree = [];
+    Object.values(comments).forEach(comment => {
+      if (!comment.parentId) {
+        commentTree.push(comment);
+      } else if (comments[comment.parentId]) {
+        if (!comments[comment.parentId].replies) {
+          comments[comment.parentId].replies = [];
+        }
+        comments[comment.parentId].replies.push(comment);
+      }
+    });
+
+    return commentTree;
   } catch (error) {
-    console.error('Error fetching comments:', error);
-    return [];
+    console.error('Error getting comments:', error);
+    throw error;
   }
 };
 
 export const deleteComment = async (postId, commentId) => {
   try {
-    const commentRef = doc(db, 'posts', postId, 'comments', commentId);
-    await deleteDoc(commentRef);
+    await deleteDoc(doc(db, 'posts', postId, 'comments', commentId));
   } catch (error) {
     console.error('Error deleting comment:', error);
     throw error;
@@ -67,7 +78,7 @@ export const likeComment = async (postId, commentId, userId) => {
   try {
     const commentRef = doc(db, 'posts', postId, 'comments', commentId);
     await updateDoc(commentRef, {
-      likes: increment(1),
+      likes: arrayUnion(userId),
       likedBy: arrayUnion(userId)
     });
   } catch (error) {
@@ -80,11 +91,23 @@ export const unlikeComment = async (postId, commentId, userId) => {
   try {
     const commentRef = doc(db, 'posts', postId, 'comments', commentId);
     await updateDoc(commentRef, {
-      likes: increment(-1),
+      likes: arrayRemove(userId),
       likedBy: arrayRemove(userId)
     });
   } catch (error) {
     console.error('Error unliking comment:', error);
+    throw error;
+  }
+};
+
+export const toggleCommentExpansion = async (postId, commentId, isExpanded) => {
+  try {
+    const commentRef = doc(db, 'posts', postId, 'comments', commentId);
+    await updateDoc(commentRef, {
+      isExpanded
+    });
+  } catch (error) {
+    console.error('Error toggling comment expansion:', error);
     throw error;
   }
 }; 

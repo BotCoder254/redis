@@ -3,9 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Comment from './Comment';
-import { addComment, getComments } from '../../services/commentService';
+import { addComment, getComments, toggleCommentExpansion } from '../../services/commentService';
 import { db } from '../../config/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { HiChevronDown, HiChevronRight } from 'react-icons/hi';
 
 const CommentsSection = ({ postId }) => {
   const { user } = useAuth();
@@ -17,17 +18,33 @@ const CommentsSection = ({ postId }) => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Set up real-time listener for comments
     const commentsRef = collection(db, 'posts', postId, 'comments');
     const commentsQuery = query(commentsRef, orderBy('createdAt', 'desc'));
 
     const unsubscribe = onSnapshot(commentsQuery, (snapshot) => {
-      const fetchedComments = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate().toLocaleString()
-      }));
-      setComments(fetchedComments);
+      const fetchedComments = {};
+      snapshot.docs.forEach(doc => {
+        fetchedComments[doc.id] = {
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate().toLocaleString()
+        };
+      });
+
+      // Build comment tree
+      const commentTree = [];
+      Object.values(fetchedComments).forEach(comment => {
+        if (!comment.parentId) {
+          commentTree.push(comment);
+        } else if (fetchedComments[comment.parentId]) {
+          if (!fetchedComments[comment.parentId].replies) {
+            fetchedComments[comment.parentId].replies = [];
+          }
+          fetchedComments[comment.parentId].replies.push(comment);
+        }
+      });
+
+      setComments(commentTree);
       setLoading(false);
     }, (error) => {
       console.error('Error fetching comments:', error);
@@ -55,7 +72,8 @@ const CommentsSection = ({ postId }) => {
         authorImage: user.photoURL,
         createdAt: new Date(),
         likes: 0,
-        likedBy: []
+        likedBy: [],
+        isExpanded: true
       };
 
       await addComment(postId, commentData);
@@ -80,6 +98,7 @@ const CommentsSection = ({ postId }) => {
         authorId: user.uid,
         authorName: user.displayName || user.email,
         authorImage: user.photoURL,
+        isExpanded: true
       };
 
       await addComment(postId, replyData, parentId);
@@ -93,12 +112,28 @@ const CommentsSection = ({ postId }) => {
     setComments(prev => prev.filter(comment => comment.id !== commentId));
   };
 
-  // Get root-level comments (no parentId)
-  const rootComments = comments.filter(comment => !comment.parentId);
+  const handleToggleExpand = async (commentId, isExpanded) => {
+    try {
+      await toggleCommentExpansion(postId, commentId, !isExpanded);
+    } catch (error) {
+      console.error('Error toggling comment expansion:', error);
+    }
+  };
+
+  // Get total comment count including replies
+  const getTotalCommentCount = (comments) => {
+    let count = comments.length;
+    comments.forEach(comment => {
+      if (comment.replies?.length) {
+        count += getTotalCommentCount(comment.replies);
+      }
+    });
+    return count;
+  };
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold">Comments ({comments.length})</h2>
+      <h2 className="text-2xl font-bold">Comments ({getTotalCommentCount(comments)})</h2>
 
       {error && (
         <motion.div
@@ -110,7 +145,6 @@ const CommentsSection = ({ postId }) => {
         </motion.div>
       )}
 
-      {/* New Comment Form */}
       {user ? (
         <form onSubmit={handleSubmitComment} className="space-y-4">
           <textarea
@@ -144,7 +178,6 @@ const CommentsSection = ({ postId }) => {
         </div>
       )}
 
-      {/* Comments List */}
       {loading ? (
         <div className="flex justify-center py-8">
           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500" />
@@ -152,14 +185,15 @@ const CommentsSection = ({ postId }) => {
       ) : (
         <AnimatePresence>
           <div className="space-y-6">
-            {rootComments.map(comment => (
+            {comments.map(comment => (
               <Comment
                 key={comment.id}
                 comment={comment}
                 postId={postId}
                 onReply={handleReply}
                 onDelete={handleDeleteComment}
-                allComments={comments}
+                onToggleExpand={handleToggleExpand}
+                depth={0}
               />
             ))}
           </div>
