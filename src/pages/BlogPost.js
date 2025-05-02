@@ -8,7 +8,8 @@ import {
   HiClock, 
   HiTag,
   HiChat,
-  HiArrowLeft
+  HiArrowLeft,
+  HiClipboardCheck
 } from 'react-icons/hi';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../config/firebase';
@@ -35,6 +36,7 @@ import remarkBreaks from 'remark-breaks';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import CommentsSection from '../components/comments/CommentsSection';
+import ConfirmationModal from '../components/modals/ConfirmationModal';
 
 const BlogPost = () => {
   const { postId } = useParams();
@@ -48,6 +50,8 @@ const BlogPost = () => {
   const [comments, setComments] = useState([]);
   const [isLiked, setIsLiked] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
+  const [showCopyModal, setShowCopyModal] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
 
   useEffect(() => {
     const fetchPost = async () => {
@@ -200,8 +204,13 @@ const BlogPost = () => {
 
   const handleShare = async () => {
     try {
-      await navigator.clipboard.writeText(shareUrl);
-      alert('Link copied to clipboard!');
+      await navigator.clipboard.writeText(window.location.href);
+      setIsCopied(true);
+      setShowCopyModal(true);
+      setTimeout(() => {
+        setShowCopyModal(false);
+        setIsCopied(false);
+      }, 2000);
     } catch (err) {
       console.error('Error copying to clipboard:', err);
     }
@@ -235,6 +244,16 @@ const BlogPost = () => {
 
   return (
     <div className="min-h-screen">
+      <ConfirmationModal
+        isOpen={showCopyModal}
+        onClose={() => setShowCopyModal(false)}
+        onConfirm={() => setShowCopyModal(false)}
+        title="Link Copied!"
+        message="The blog post link has been copied to your clipboard."
+        confirmText="OK"
+        confirmButtonClass="bg-green-600 hover:bg-green-700"
+      />
+
       {/* Navigation Bar */}
       <nav className="sticky top-0 z-50 bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -382,8 +401,12 @@ const BlogPost = () => {
                 onClick={handleShare}
                 className="flex items-center space-x-2 px-4 py-2 rounded-md text-gray-600 bg-gray-50 hover:bg-gray-100 transition-all duration-200"
               >
-                <HiShare className="h-5 w-5" />
-                <span>Share</span>
+                {isCopied ? (
+                  <HiClipboardCheck className="h-5 w-5 text-green-600" />
+                ) : (
+                  <HiShare className="h-5 w-5" />
+                )}
+                <span>{isCopied ? 'Copied!' : 'Share'}</span>
               </button>
             </div>
 

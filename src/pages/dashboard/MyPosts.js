@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HiPencil, HiTrash, HiEye, HiX } from 'react-icons/hi';
+import { HiPencil, HiTrash, HiEye, HiX, HiClipboard, HiClipboardCheck } from 'react-icons/hi';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../config/firebase';
 import { useNavigate } from 'react-router-dom';
@@ -13,53 +13,7 @@ import {
   doc,
   updateDoc,
 } from 'firebase/firestore';
-
-const DeleteConfirmationModal = ({ isOpen, onClose, onConfirm, postTitle }) => (
-  <AnimatePresence>
-    {isOpen && (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-      >
-        <motion.div
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.95, opacity: 0 }}
-          className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
-        >
-          <div className="flex justify-between items-start mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Confirm Delete</h3>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-500"
-            >
-              <HiX className="h-5 w-5" />
-            </button>
-          </div>
-          <p className="text-gray-600 mb-6">
-            Are you sure you want to delete "{postTitle}"? This action cannot be undone.
-          </p>
-          <div className="flex justify-end space-x-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={onConfirm}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-            >
-              Delete
-            </button>
-          </div>
-        </motion.div>
-      </motion.div>
-    )}
-  </AnimatePresence>
-);
+import ConfirmationModal from '../../components/modals/ConfirmationModal';
 
 const MyPosts = () => {
   const { user } = useAuth();
@@ -69,6 +23,7 @@ const MyPosts = () => {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('published');
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, postId: null, postTitle: '' });
+  const [copiedPostId, setCopiedPostId] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -132,6 +87,14 @@ const MyPosts = () => {
     }
   };
 
+  const handleCopyLink = (postId) => {
+    const url = `${window.location.origin}/post/${postId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedPostId(postId);
+      setTimeout(() => setCopiedPostId(null), 2000);
+    });
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -139,11 +102,14 @@ const MyPosts = () => {
       transition={{ duration: 0.5 }}
       className="bg-white rounded-lg shadow"
     >
-      <DeleteConfirmationModal
+      <ConfirmationModal
         isOpen={deleteModal.isOpen}
         onClose={() => setDeleteModal({ isOpen: false, postId: null, postTitle: '' })}
         onConfirm={() => handleDelete(deleteModal.postId)}
-        postTitle={deleteModal.postTitle}
+        title="Confirm Delete"
+        message={`Are you sure you want to delete "${deleteModal.postTitle}"? This action cannot be undone.`}
+        confirmText="Delete"
+        confirmButtonClass="bg-red-600 hover:bg-red-700"
       />
 
       {/* Tabs */}
@@ -237,6 +203,17 @@ const MyPosts = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex justify-end space-x-2">
+                        <button
+                          onClick={() => handleCopyLink(post.id)}
+                          className="text-gray-600 hover:text-gray-900"
+                          title="Copy Link"
+                        >
+                          {copiedPostId === post.id ? (
+                            <HiClipboardCheck className="h-5 w-5 text-green-600" />
+                          ) : (
+                            <HiClipboard className="h-5 w-5" />
+                          )}
+                        </button>
                         <button
                           onClick={() => handleView(post.id)}
                           className="text-indigo-600 hover:text-indigo-900"
