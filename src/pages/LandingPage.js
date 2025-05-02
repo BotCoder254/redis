@@ -77,9 +77,9 @@ const LandingPage = () => {
       const unsubscribe = onSnapshot(q, async (snapshot) => {
         const postsPromises = snapshot.docs.map(async (doc) => {
           const data = doc.data();
-          // Get comments count
+          // Get comments count - only count non-deleted comments
           const commentsSnapshot = await getDocs(collection(db, 'posts', doc.id, 'comments'));
-          const commentsCount = commentsSnapshot.size;
+          const commentsCount = commentsSnapshot.docs.filter(doc => !doc.data()._isDeleted).length;
 
           return {
             id: doc.id,

@@ -207,6 +207,11 @@ const BlogPost = () => {
     }
   };
 
+  // Add this function to calculate active comments count
+  const getActiveCommentsCount = (comments) => {
+    return comments.filter(comment => !comment._isDeleted).length;
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -279,7 +284,7 @@ const BlogPost = () => {
             <div className="flex flex-wrap items-center gap-4 mb-8">
               <div className="flex items-center text-gray-600">
                 <HiChat className="h-5 w-5 mr-1" />
-                {comments.length} comments
+                {getActiveCommentsCount(comments)} comments
               </div>
               <div className="flex items-center text-gray-600">
                 <HiTag className="h-5 w-5 mr-1" />

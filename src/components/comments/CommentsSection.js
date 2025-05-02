@@ -5,7 +5,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import Comment from './Comment';
 import { addComment, getComments, toggleCommentExpansion } from '../../services/commentService';
 import { db } from '../../config/firebase';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { HiChevronDown, HiChevronRight } from 'react-icons/hi';
 
 const CommentsSection = ({ postId }) => {
@@ -65,18 +65,15 @@ const CommentsSection = ({ postId }) => {
     if (!newComment.trim()) return;
 
     try {
-      const commentData = {
+      await addComment(postId, {
         content: newComment.trim(),
         authorId: user.uid,
         authorName: user.displayName || user.email,
         authorImage: user.photoURL,
-        createdAt: new Date(),
-        likes: 0,
-        likedBy: [],
+        createdAt: serverTimestamp(),
+        _isDeleted: false,
         isExpanded: true
-      };
-
-      await addComment(postId, commentData);
+      });
       setNewComment('');
     } catch (error) {
       console.error('Error adding comment:', error);
@@ -93,15 +90,16 @@ const CommentsSection = ({ postId }) => {
     if (!content.trim()) return;
 
     try {
-      const replyData = {
+      await addComment(postId, {
         content: content.trim(),
         authorId: user.uid,
         authorName: user.displayName || user.email,
         authorImage: user.photoURL,
+        parentId,
+        createdAt: serverTimestamp(),
+        _isDeleted: false,
         isExpanded: true
-      };
-
-      await addComment(postId, replyData, parentId);
+      });
     } catch (error) {
       console.error('Error adding reply:', error);
       setError('Failed to add reply');
@@ -137,16 +135,17 @@ const CommentsSection = ({ postId }) => {
 
   // Get total comment count including replies
   const getTotalCommentCount = (comments) => {
-    let count = 0;
-    comments.forEach(comment => {
-      if (comment && !comment._isDeleted) {
-        count++;
-        if (comment.replies?.length) {
-          count += getTotalCommentCount(comment.replies.filter(reply => !reply._isDeleted));
-        }
+    return comments.filter(comment => !comment._isDeleted).reduce((total, comment) => {
+      // Count the current comment if it's not deleted
+      let count = comment._isDeleted ? 0 : 1;
+      
+      // Add counts from replies if they exist and are not deleted
+      if (comment.replies && Array.isArray(comment.replies)) {
+        count += comment.replies.filter(reply => !reply._isDeleted).length;
       }
-    });
-    return count;
+      
+      return total + count;
+    }, 0);
   };
 
   return (
