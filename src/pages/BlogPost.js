@@ -37,6 +37,8 @@ import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import CommentsSection from '../components/comments/CommentsSection';
 import ConfirmationModal from '../components/modals/ConfirmationModal';
+import PollSection from '../components/blog/PollSection';
+import QASection from '../components/blog/QASection';
 
 const BlogPost = () => {
   const { postId } = useParams();
@@ -408,6 +410,16 @@ const BlogPost = () => {
                 )}
                 <span>{isCopied ? 'Copied!' : 'Share'}</span>
               </button>
+            </div>
+
+            {/* Polls Section */}
+            <div className="mb-12">
+              <PollSection postId={postId} />
+            </div>
+
+            {/* Q&A Section */}
+            <div className="mb-12">
+              <QASection postId={postId} authorId={post.authorId} />
             </div>
 
             {/* Comments Section */}
