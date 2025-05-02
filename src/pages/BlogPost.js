@@ -28,6 +28,7 @@ import {
   orderBy,
   getDocs
 } from 'firebase/firestore';
+import ImageSlider from '../components/ImageSlider';
 
 const BlogPost = () => {
   const { postId } = useParams();
@@ -193,10 +194,8 @@ const BlogPost = () => {
 
       {/* Hero Section */}
       <div className="relative w-full h-[60vh] overflow-hidden">
-        <img
-          src={post.imageUrl || `https://source.unsplash.com/random/${post.id}`}
-          alt={post.title}
-          className="w-full h-full object-cover"
+        <ImageSlider 
+          images={post.imageUrls || [post.imageUrl || `https://source.unsplash.com/random/${post.id}`]} 
         />
         <div className="absolute inset-0 bg-black bg-opacity-40">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full flex items-end pb-16">

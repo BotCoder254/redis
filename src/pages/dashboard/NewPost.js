@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HiUpload, HiCheck, HiX } from 'react-icons/hi';
+import { HiUpload, HiCheck, HiX, HiLightBulb } from 'react-icons/hi';
 import { useAuth } from '../../context/AuthContext';
 import { db, storage } from '../../config/firebase';
 import { 
@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useNavigate } from 'react-router-dom';
+import { generateContentSuggestions, generateBlogOutline } from '../../services/aiService';
 
 const CATEGORIES = [
   'Technology',
@@ -31,26 +32,142 @@ const NewPost = () => {
   const [content, setContent] = useState('');
   const [tags, setTags] = useState('');
   const [category, setCategory] = useState('');
-  const [image, setImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState('');
+  const [images, setImages] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [publishingStatus, setPublishingStatus] = useState('');
+  const [aiSuggestions, setAiSuggestions] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [generatedContents, setGeneratedContents] = useState([]);
 
   const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        setError('Image size should be less than 5MB');
-        return;
-      }
-      setImage(file);
+    const files = Array.from(e.target.files);
+    const validFiles = files.filter(file => file.size <= 5 * 1024 * 1024);
+
+    if (validFiles.length !== files.length) {
+      setError('Some images were skipped (max size: 5MB per image)');
+    }
+
+    setImages(prev => [...prev, ...validFiles]);
+
+    validFiles.forEach(file => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImagePreview(reader.result);
+        setImagePreviews(prev => [...prev, reader.result]);
       };
       reader.readAsDataURL(file);
+    });
+  };
+
+  const removeImage = (index) => {
+    setImages(prev => prev.filter((_, i) => i !== index));
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleGenerateIdeas = async () => {
+    if (!title && !category) {
+      setError('Please provide a title or category for AI suggestions');
+      return;
+    }
+
+    setIsGenerating(true);
+    setGenerationError('');
+    setSuggestions([]);
+    setGeneratedContents([]);
+
+    try {
+      const result = await generateContentSuggestions(title || category);
+      if (typeof result === 'string') {
+        if (result.includes('API key')) {
+          setGenerationError('AI service is currently unavailable. Please try again later.');
+        } else {
+          // Format the result into separate suggestions
+          const lines = result.split('\n').filter(line => line.trim());
+          const formattedSuggestions = [];
+          let currentSuggestion = '';
+          
+          for (const line of lines) {
+            if (line.startsWith('1.') || line.startsWith('2.') || line.startsWith('3.')) {
+              if (currentSuggestion) {
+                formattedSuggestions.push(currentSuggestion.trim());
+                currentSuggestion = '';
+              }
+              currentSuggestion = line;
+            } else {
+              currentSuggestion += '\n' + line;
+            }
+          }
+          
+          if (currentSuggestion) {
+            formattedSuggestions.push(currentSuggestion.trim());
+          }
+
+          // Take up to 3 suggestions
+          setSuggestions(formattedSuggestions.slice(0, 3));
+        }
+      } else {
+        setGenerationError('Failed to generate suggestions. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error generating suggestions:', error);
+      setGenerationError('Failed to generate suggestions. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleGenerateOutline = async () => {
+    if (!title) {
+      setError('Please provide a title for the outline');
+      return;
+    }
+
+    setIsGenerating(true);
+    setGenerationError('');
+    setSuggestions([]);
+    setGeneratedContents([]);
+
+    try {
+      const outline = await generateBlogOutline(title);
+      if (typeof outline === 'string' && outline.includes('API key')) {
+        setGenerationError('AI service is currently unavailable. Please try again later.');
+      } else {
+        setGeneratedContents([outline]);
+      }
+    } catch (error) {
+      console.error('Error generating outline:', error);
+      setGenerationError('Failed to generate outline. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleGenerateContent = async (suggestion) => {
+    setIsGenerating(true);
+    setGenerationError('');
+
+    try {
+      const result = await generateBlogOutline(suggestion);
+      if (typeof result === 'string') {
+        if (result.includes('API key')) {
+          setGenerationError('AI service is currently unavailable. Please try again later.');
+        } else {
+          // Format and add the generated content
+          const formattedContent = result.trim();
+          setGeneratedContents(prev => [...prev, formattedContent]);
+        }
+      } else {
+        setGenerationError('Failed to generate content. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error generating content:', error);
+      setGenerationError('Failed to generate content. Please try again.');
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -66,13 +183,14 @@ const NewPost = () => {
     setSuccess(false);
 
     try {
-      updatePublishingStatus('Uploading image...');
-      let imageUrl = '';
-      if (image) {
-        const imageRef = ref(storage, `blog-images/${Date.now()}-${image.name}`);
-        await uploadBytes(imageRef, image);
-        imageUrl = await getDownloadURL(imageRef);
-      }
+      updatePublishingStatus('Uploading images...');
+      const imageUrls = await Promise.all(
+        images.map(async (image) => {
+          const imageRef = ref(storage, `blog-images/${Date.now()}-${image.name}`);
+          await uploadBytes(imageRef, image);
+          return getDownloadURL(imageRef);
+        })
+      );
 
       updatePublishingStatus('Creating post...');
       const postData = {
@@ -80,7 +198,7 @@ const NewPost = () => {
         content: content.trim(),
         tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
         category,
-        imageUrl,
+        imageUrls,
         authorId: user.uid,
         authorName: user.displayName || user.email,
         authorImage: user.photoURL,
@@ -94,7 +212,6 @@ const NewPost = () => {
 
       const docRef = await addDoc(collection(db, 'posts'), postData);
       
-      // Update the document with its ID
       await updateDoc(doc(db, 'posts', docRef.id), {
         postId: docRef.id
       });
@@ -102,14 +219,13 @@ const NewPost = () => {
       setSuccess(true);
       updatePublishingStatus(isDraft ? 'Saved as draft!' : 'Published successfully!');
       
-      // Reset form after successful submission
       setTimeout(() => {
         setTitle('');
         setContent('');
         setTags('');
         setCategory('');
-        setImage(null);
-        setImagePreview('');
+        setImages([]);
+        setImagePreviews([]);
         setSuccess(false);
         navigate('/dashboard/my-posts');
       }, 2000);
@@ -182,20 +298,6 @@ const NewPost = () => {
           />
         </div>
 
-        <div>
-          <label htmlFor="content" className="block text-sm font-medium text-gray-700">
-            Content *
-          </label>
-          <textarea
-            id="content"
-            rows="8"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            required
-          />
-        </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label htmlFor="category" className="block text-sm font-medium text-gray-700">
@@ -232,52 +334,159 @@ const NewPost = () => {
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Feature Image</label>
-          <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
-            <div className="space-y-1 text-center">
-              {imagePreview ? (
-                <div className="relative">
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
-                    className="mx-auto h-48 w-auto rounded"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImage(null);
-                      setImagePreview('');
-                    }}
-                    className="absolute top-0 right-0 -mt-2 -mr-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                  >
-                    <HiX className="h-4 w-4" />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <HiUpload className="mx-auto h-12 w-12 text-gray-400" />
-                  <div className="flex text-sm text-gray-600">
-                    <label
-                      htmlFor="image"
-                      className="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"
-                    >
-                      <span>Upload a file</span>
-                      <input
-                        id="image"
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageChange}
-                        className="sr-only"
-                      />
-                    </label>
-                    <p className="pl-1">or drag and drop</p>
-                  </div>
-                  <p className="text-xs text-gray-500">PNG, JPG, GIF up to 5MB</p>
-                </>
-              )}
+        {/* AI Suggestions */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-medium text-gray-900">AI Assistance</h3>
+            <div className="space-x-2">
+              <button
+                type="button"
+                onClick={handleGenerateIdeas}
+                disabled={isGenerating || !title}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+              >
+                <HiLightBulb className="h-5 w-5 mr-2" />
+                Generate Ideas
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerateOutline}
+                disabled={isGenerating || !title}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+              >
+                Generate Outline
+              </button>
             </div>
           </div>
+
+          {isGenerating && (
+            <div className="flex items-center justify-center py-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500" />
+            </div>
+          )}
+
+          {generationError && (
+            <div className="bg-red-100 border border-red-400 text-red-700 rounded p-4">
+              <h4 className="text-sm font-medium text-red-700">Error</h4>
+              <p>{generationError}</p>
+            </div>
+          )}
+
+          {suggestions.length > 0 && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-gray-900 mb-3">Choose a Suggestion</h4>
+              <div className="space-y-4">
+                {suggestions.map((suggestion, index) => (
+                  <div key={index} className="bg-white rounded-lg p-4 shadow-sm">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <pre className="whitespace-pre-wrap text-sm text-gray-700">{suggestion}</pre>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateContent(suggestion)}
+                        disabled={isGenerating}
+                        className="ml-4 inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                      >
+                        Generate Content
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {generatedContents.length > 0 && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-gray-900 mb-3">Generated Content Versions</h4>
+              <div className="space-y-4">
+                {generatedContents.map((content, index) => (
+                  <div key={index} className="bg-white rounded-lg p-4 shadow-sm">
+                    <div className="flex justify-between items-start mb-3">
+                      <span className="text-xs font-medium text-gray-500">Version {index + 1}</span>
+                      <div className="space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => setContent(prev => prev ? `${prev}\n\n${content}` : content)}
+                          className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                        >
+                          Append
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setContent(content)}
+                          className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                          Use This Version
+                        </button>
+                      </div>
+                    </div>
+                    <pre className="whitespace-pre-wrap text-sm text-gray-700 max-h-60 overflow-y-auto">
+                      {content}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Content Section */}
+        <div>
+          <label htmlFor="content" className="block text-sm font-medium text-gray-700">
+            Content *
+          </label>
+          <div className="mt-1 relative">
+            <textarea
+              id="content"
+              rows="12"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              placeholder="Write your blog post content here..."
+              required
+            />
+          </div>
+          <p className="mt-2 text-sm text-gray-500">
+            Use the AI suggestions above to help structure your content. You can append or replace the content with generated suggestions.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Images</label>
+          <div className="mt-1 grid grid-cols-2 md:grid-cols-4 gap-4">
+            {imagePreviews.map((preview, index) => (
+              <div key={index} className="relative">
+                <img
+                  src={preview}
+                  alt={`Preview ${index + 1}`}
+                  className="h-32 w-full object-cover rounded-lg"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeImage(index)}
+                  className="absolute top-0 right-0 -mt-2 -mr-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                >
+                  <HiX className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+            <div className="h-32 flex items-center justify-center border-2 border-gray-300 border-dashed rounded-lg">
+              <label className="cursor-pointer text-center p-4">
+                <HiUpload className="mx-auto h-8 w-8 text-gray-400" />
+                <span className="mt-2 block text-sm text-gray-600">Add Image</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="hidden"
+                  multiple
+                />
+              </label>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-gray-500">PNG, JPG, GIF up to 5MB each</p>
         </div>
 
         <div className="flex justify-end space-x-3">
