@@ -67,7 +67,13 @@ export const getComments = async (postId) => {
 
 export const deleteComment = async (postId, commentId) => {
   try {
-    await deleteDoc(doc(db, 'posts', postId, 'comments', commentId));
+    const commentRef = doc(db, 'posts', postId, 'comments', commentId);
+    await updateDoc(commentRef, {
+      _isDeleted: true,
+      content: '[deleted]',
+      authorName: '[deleted]',
+      authorImage: null
+    });
   } catch (error) {
     console.error('Error deleting comment:', error);
     throw error;

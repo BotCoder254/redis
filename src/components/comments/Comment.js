@@ -54,10 +54,13 @@ const Comment = ({ comment, postId, onReply, onDelete, onToggleExpand, depth = 0
       exit={{ opacity: 0, y: -20 }}
       className="relative"
     >
-      <div className={`flex space-x-4 ${depth > 0 ? 'ml-6' : ''}`}>
+      <div className={`flex space-x-4 ${depth > 0 ? 'ml-8' : ''}`}>
         {/* Thread line */}
         {depth > 0 && (
-          <div className="absolute left-[-24px] top-0 bottom-0 w-px bg-gray-200" />
+          <>
+            <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-gray-200" />
+            <div className="absolute left-0 top-6 w-6 h-[2px] bg-gray-200" />
+          </>
         )}
         
         {/* Avatar */}

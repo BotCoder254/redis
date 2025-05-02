@@ -109,7 +109,22 @@ const CommentsSection = ({ postId }) => {
   };
 
   const handleDeleteComment = (commentId) => {
-    setComments(prev => prev.filter(comment => comment.id !== commentId));
+    const deleteCommentFromTree = (comments) => {
+      return comments.map(comment => {
+        if (comment.id === commentId) {
+          return { ...comment, _isDeleted: true };
+        }
+        if (comment.replies?.length) {
+          return {
+            ...comment,
+            replies: deleteCommentFromTree(comment.replies)
+          };
+        }
+        return comment;
+      });
+    };
+
+    setComments(prev => deleteCommentFromTree(prev));
   };
 
   const handleToggleExpand = async (commentId, isExpanded) => {
@@ -122,10 +137,13 @@ const CommentsSection = ({ postId }) => {
 
   // Get total comment count including replies
   const getTotalCommentCount = (comments) => {
-    let count = comments.length;
+    let count = 0;
     comments.forEach(comment => {
-      if (comment.replies?.length) {
-        count += getTotalCommentCount(comment.replies);
+      if (comment && !comment._isDeleted) {
+        count++;
+        if (comment.replies?.length) {
+          count += getTotalCommentCount(comment.replies.filter(reply => !reply._isDeleted));
+        }
       }
     });
     return count;
@@ -133,7 +151,9 @@ const CommentsSection = ({ postId }) => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold">Comments ({getTotalCommentCount(comments)})</h2>
+      <h2 className="text-2xl font-bold">
+        Comments ({getTotalCommentCount(comments.filter(comment => !comment._isDeleted))})
+      </h2>
 
       {error && (
         <motion.div
@@ -185,16 +205,18 @@ const CommentsSection = ({ postId }) => {
       ) : (
         <AnimatePresence>
           <div className="space-y-6">
-            {comments.map(comment => (
-              <Comment
-                key={comment.id}
-                comment={comment}
-                postId={postId}
-                onReply={handleReply}
-                onDelete={handleDeleteComment}
-                onToggleExpand={handleToggleExpand}
-                depth={0}
-              />
+            {comments
+              .filter(comment => !comment._isDeleted)
+              .map(comment => (
+                <Comment
+                  key={comment.id}
+                  comment={comment}
+                  postId={postId}
+                  onReply={handleReply}
+                  onDelete={handleDeleteComment}
+                  onToggleExpand={handleToggleExpand}
+                  depth={0}
+                />
             ))}
           </div>
         </AnimatePresence>
