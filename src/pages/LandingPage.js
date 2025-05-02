@@ -7,6 +7,7 @@ import { db } from '../config/firebase';
 import { HiEye, HiHeart, HiChat, HiChevronLeft, HiChevronRight } from 'react-icons/hi';
 import { getCategories, getTags } from '../services/categoryService';
 import { useAuth } from '../context/AuthContext';
+import BookmarkButton from '../components/blog/BookmarkButton';
 
 // Define the categories constant to match blog creation
 const CATEGORIES = [
@@ -415,23 +416,25 @@ const LandingPage = () => {
                 layout
                 className="break-inside-avoid mb-4"
               >
-                <Link
-                  to={`/post/${post.id}`}
-                  className="block bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow"
-                >
-                  <div className="relative group aspect-w-16 aspect-h-9">
-                    <img
-                      src={post.imageUrls?.[0] || post.imageUrl || `https://source.unsplash.com/random/${post.id}?blog,article`}
-                      alt={post.title}
-                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      loading="lazy"
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = `https://source.unsplash.com/random/${post.id}?blog,article`;
-                      }}
-                    />
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-300" />
-                  </div>
+                <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow">
+                  <Link
+                    to={`/post/${post.id}`}
+                    className="block"
+                  >
+                    <div className="relative group aspect-w-16 aspect-h-9">
+                      <img
+                        src={post.imageUrls?.[0] || post.imageUrl || `https://source.unsplash.com/random/${post.id}?blog,article`}
+                        alt={post.title}
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        loading="lazy"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = `https://source.unsplash.com/random/${post.id}?blog,article`;
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-300" />
+                    </div>
+                  </Link>
                   <div className="p-6">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center">
@@ -449,13 +452,15 @@ const LandingPage = () => {
                       </span>
                     </div>
 
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2 line-clamp-2">
-                      {post.title}
-                    </h3>
-                    
-                    <p className="text-gray-600 mb-4 line-clamp-3">
-                      {post.content}
-                    </p>
+                    <Link to={`/post/${post.id}`}>
+                      <h3 className="text-xl font-semibold text-gray-900 mb-2 line-clamp-2 hover:text-indigo-600 transition-colors">
+                        {post.title}
+                      </h3>
+                      
+                      <p className="text-gray-600 mb-4 line-clamp-3">
+                        {post.content}
+                      </p>
+                    </Link>
 
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-4 text-sm text-gray-500">
@@ -471,6 +476,7 @@ const LandingPage = () => {
                           <HiChat className="h-4 w-4 mr-1" />
                           {post.commentsCount || 0}
                         </div>
+                        <BookmarkButton postId={post.id} className="text-gray-500 hover:text-indigo-600" />
                       </div>
 
                       <div className="flex flex-wrap gap-2">
@@ -488,7 +494,7 @@ const LandingPage = () => {
                       </div>
                     </div>
                   </div>
-                </Link>
+                </div>
               </motion.div>
             ))}
           </AnimatePresence>

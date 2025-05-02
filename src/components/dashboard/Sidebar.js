@@ -8,6 +8,7 @@ import {
   HiOutlineChatAlt,
   HiOutlineMenu,
   HiOutlineX,
+  HiBookmark,
 } from 'react-icons/hi';
 
 const menuItems = [
@@ -15,6 +16,7 @@ const menuItems = [
   { path: '/dashboard/my-posts', icon: HiOutlineDocumentText, label: 'My Posts' },
   { path: '/dashboard/analytics', icon: HiOutlineChartBar, label: 'Analytics' },
   { path: '/dashboard/comments', icon: HiOutlineChatAlt, label: 'Comments' },
+  { path: '/dashboard/bookmarks', icon: HiBookmark, label: 'Bookmarks' },
 ];
 
 const Sidebar = ({ isCollapsed, toggleSidebar }) => {
