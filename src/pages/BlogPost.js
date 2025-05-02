@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   HiHeart, 
@@ -34,10 +34,12 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
+import CommentsSection from '../components/comments/CommentsSection';
 
 const BlogPost = () => {
   const { postId } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -140,7 +142,10 @@ const BlogPost = () => {
   };
 
   const handleLike = async () => {
-    if (!user) return;
+    if (!user) {
+      navigate('/login', { state: { from: `/post/${postId}` } });
+      return;
+    }
 
     try {
       const postRef = doc(db, 'posts', postId);
@@ -155,7 +160,6 @@ const BlogPost = () => {
           likedBy: isLiked ? arrayRemove(user.uid) : arrayUnion(user.uid)
         });
 
-        // Update local state
         setPost(prev => ({
           ...prev,
           likes: isLiked ? currentLikes - 1 : currentLikes + 1,
@@ -173,7 +177,12 @@ const BlogPost = () => {
 
   const handleComment = async (e) => {
     e.preventDefault();
-    if (!user || !comment.trim()) return;
+    if (!user) {
+      navigate('/login', { state: { from: `/post/${postId}` } });
+      return;
+    }
+
+    if (!comment.trim()) return;
 
     try {
       await addDoc(collection(db, 'posts', postId, 'comments'), {
@@ -374,51 +383,7 @@ const BlogPost = () => {
             </div>
 
             {/* Comments Section */}
-            <div className="border-t pt-12">
-              <h2 className="text-2xl font-bold mb-6">Comments</h2>
-              
-              {user ? (
-                <form onSubmit={handleComment} className="mb-8">
-                  <textarea
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    placeholder="Add a comment..."
-                    className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    rows="3"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!comment.trim()}
-                    className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
-                  >
-                    Post Comment
-                  </button>
-                </form>
-              ) : (
-                <p className="mb-8 text-gray-600">
-                  Please <Link to="/login" className="text-indigo-600 hover:text-indigo-500">login</Link> to comment
-                </p>
-              )}
-
-              <div className="space-y-6">
-                {comments.map((comment) => (
-                  <div key={comment.id} className="flex space-x-4">
-                    <img
-                      src={comment.authorImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.authorName)}`}
-                      alt={comment.authorName}
-                      className="h-10 w-10 rounded-full"
-                    />
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium">{comment.authorName}</span>
-                        <span className="text-gray-500 text-sm">{comment.createdAt}</span>
-                      </div>
-                      <p className="mt-1 text-gray-800">{comment.content}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <CommentsSection postId={postId} />
           </div>
 
           {/* Sidebar */}

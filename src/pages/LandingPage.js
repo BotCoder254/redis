@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { FiSearch, FiGithub, FiTwitter, FiLinkedin, FiFilter } from 'react-icons/fi';
-import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { HiEye, HiHeart, HiChat, HiChevronLeft, HiChevronRight } from 'react-icons/hi';
 import { getCategories, getTags } from '../services/categoryService';
+import { useAuth } from '../context/AuthContext';
 
 // Define the categories constant to match blog creation
 const CATEGORIES = [
@@ -20,6 +21,7 @@ const CATEGORIES = [
 ];
 
 const LandingPage = () => {
+  const { user } = useAuth();
   const [trendingPosts, setTrendingPosts] = useState([]);
   const [filteredPosts, setFilteredPosts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -72,29 +74,33 @@ const LandingPage = () => {
         where('status', '==', 'published')
       );
 
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const posts = snapshot.docs
-          .map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              ...data,
-              imageUrls: data.imageUrls || [],
-              imageUrl: data.imageUrl || null,
-              createdAt: data.createdAt ? data.createdAt.toDate() : new Date(),
-              authorName: data.authorName || 'Anonymous',
-              views: data.views || 0,
-              likes: data.likes || 0,
-              comments: data.comments || [],
-              tags: data.tags || [],
-              category: data.category || ''
-            };
-          })
-          .sort((a, b) => (b.views || 0) - (a.views || 0))
-          .slice(0, 12);
+      const unsubscribe = onSnapshot(q, async (snapshot) => {
+        const postsPromises = snapshot.docs.map(async (doc) => {
+          const data = doc.data();
+          // Get comments count
+          const commentsSnapshot = await getDocs(collection(db, 'posts', doc.id, 'comments'));
+          const commentsCount = commentsSnapshot.size;
 
-        setTrendingPosts(posts);
-        setFilteredPosts(posts);
+          return {
+            id: doc.id,
+            ...data,
+            imageUrls: data.imageUrls || [],
+            imageUrl: data.imageUrl || null,
+            createdAt: data.createdAt ? data.createdAt.toDate() : new Date(),
+            authorName: data.authorName || 'Anonymous',
+            views: data.views || 0,
+            likes: data.likes || 0,
+            commentsCount,
+            tags: data.tags || [],
+            category: data.category || ''
+          };
+        });
+
+        const posts = await Promise.all(postsPromises);
+        const sortedPosts = posts.sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 12);
+
+        setTrendingPosts(sortedPosts);
+        setFilteredPosts(sortedPosts);
       });
 
       return () => unsubscribe();
@@ -269,6 +275,18 @@ const LandingPage = () => {
         animate={{ opacity: 1 }}
         className="relative h-[70vh] overflow-hidden"
       >
+        {/* Navigation Bar for Authenticated Users */}
+        {user && (
+          <div className="absolute top-4 right-4 z-50">
+            <Link
+              to="/dashboard"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-lg backdrop-blur-md bg-opacity-80"
+            >
+              Go to Dashboard
+            </Link>
+          </div>
+        )}
+
         {/* Background Slideshow */}
         <AnimatePresence mode="wait">
           {latestPosts.map((post, index) => (
@@ -451,7 +469,7 @@ const LandingPage = () => {
                         </div>
                         <div className="flex items-center">
                           <HiChat className="h-4 w-4 mr-1" />
-                          {post.comments?.length || 0}
+                          {post.commentsCount || 0}
                         </div>
                       </div>
 
