@@ -27,14 +27,32 @@ export const generateContentSuggestions = async (topic) => {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     
-    const prompt = `Generate 3 complete blog post ideas for the topic: "${topic}". For each idea, write:
+    const prompt = `Generate 3 complete blog post ideas for the topic: "${topic}". For each idea, write in proper Markdown format:
 
-1. An engaging title
-2. A complete introduction paragraph that hooks the reader
-3. A full overview of what the article will cover
-4. A compelling conclusion paragraph
+# [Title]
 
-Make each suggestion read like a complete mini-article. Separate each suggestion with "---".`;
+## Introduction
+[A complete introduction paragraph that hooks the reader]
+
+## Overview
+[Full overview with bullet points]
+* Point 1
+* Point 2
+* Point 3
+
+## Conclusion
+[A compelling conclusion paragraph]
+
+Use proper Markdown formatting:
+- Use ## for section headings
+- Use * or - for bullet points
+- Use ** for bold text
+- Use * for italic text
+- Use \`\`\` for code blocks if needed
+- Use > for blockquotes
+- Use proper line breaks
+
+Separate each suggestion with "---"`;
 
     const result = await model.generateContent({
       contents: [{ role: 'user', parts: [{ text: prompt }]}],
@@ -62,17 +80,39 @@ export const generateBlogOutline = async (title) => {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     
-    const prompt = `Write a complete blog post for: "${title}"
+    const prompt = `Write a complete blog post for: "${title}" using proper Markdown formatting.
 
-Write a full, engaging blog post that includes:
+Use the following Markdown structure:
 
-1. An attention-grabbing introduction
-2. Well-developed main content with clear sections
-3. Relevant examples and explanations
-4. A strong conclusion that ties everything together
-5. Professional tone and natural flow
+# ${title}
 
-Make it read like a finished article that's ready to publish.`;
+## Introduction
+[Attention-grabbing introduction paragraph]
+
+## [Main Section 1]
+[Well-developed content with examples]
+
+## [Main Section 2]
+[Clear explanations and details]
+
+## [Main Section 3]
+[Supporting information and insights]
+
+## Conclusion
+[Strong conclusion that ties everything together]
+
+Remember to:
+- Use ## for section headings
+- Use * or - for bullet points
+- Use ** for bold text
+- Use * for italic text
+- Use \`\`\` for code blocks if needed
+- Use > for blockquotes
+- Use proper line breaks between sections
+- Include relevant links if applicable
+- Format lists and subheadings properly
+
+Make it read like a finished, professionally formatted blog post.`;
 
     const result = await model.generateContent({
       contents: [{ role: 'user', parts: [{ text: prompt }]}],

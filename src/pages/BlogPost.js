@@ -29,6 +29,8 @@ import {
   getDocs
 } from 'firebase/firestore';
 import ImageSlider from '../components/ImageSlider';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const BlogPost = () => {
   const { postId } = useParams();
@@ -246,7 +248,12 @@ const BlogPost = () => {
 
             {/* Post Content */}
             <div className="prose max-w-none mb-12">
-              <div dangerouslySetInnerHTML={{ __html: post.content }} />
+              <ReactMarkdown 
+                remarkPlugins={[remarkGfm]}
+                className="markdown-content"
+              >
+                {post.content}
+              </ReactMarkdown>
             </div>
 
             {/* Interactive Buttons */}
