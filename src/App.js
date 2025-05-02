@@ -11,6 +11,7 @@ import NewPost from './pages/dashboard/NewPost';
 import MyPosts from './pages/dashboard/MyPosts';
 import Analytics from './pages/dashboard/Analytics';
 import BlogPost from './pages/BlogPost';
+import EditPost from './pages/dashboard/EditPost';
 
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
@@ -80,6 +81,16 @@ function App() {
               <ProtectedRoute>
                 <DashboardLayout>
                   <Analytics />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/edit-post/:postId"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <EditPost />
                 </DashboardLayout>
               </ProtectedRoute>
             }

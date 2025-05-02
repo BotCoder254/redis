@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { HiPencil, HiTrash, HiEye } from 'react-icons/hi';
+import { motion, AnimatePresence } from 'framer-motion';
+import { HiPencil, HiTrash, HiEye, HiX } from 'react-icons/hi';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../config/firebase';
+import { useNavigate } from 'react-router-dom';
 import {
   collection,
   query,
@@ -13,17 +14,65 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 
+const DeleteConfirmationModal = ({ isOpen, onClose, onConfirm, postTitle }) => (
+  <AnimatePresence>
+    {isOpen && (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+      >
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.95, opacity: 0 }}
+          className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
+        >
+          <div className="flex justify-between items-start mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Confirm Delete</h3>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-500"
+            >
+              <HiX className="h-5 w-5" />
+            </button>
+          </div>
+          <p className="text-gray-600 mb-6">
+            Are you sure you want to delete "{postTitle}"? This action cannot be undone.
+          </p>
+          <div className="flex justify-end space-x-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+            >
+              Delete
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    )}
+  </AnimatePresence>
+);
+
 const MyPosts = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('published');
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, postId: null, postTitle: '' });
 
   useEffect(() => {
     if (!user) return;
 
-    // Simplified query to avoid index requirement
     const postsQuery = query(
       collection(db, 'posts'),
       where('authorId', '==', user.uid)
@@ -38,7 +87,6 @@ const MyPosts = () => {
             createdAt: doc.data().createdAt?.toDate().toLocaleDateString(),
           }))
           .filter(post => post.status === activeTab)
-          // Client-side sorting
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
         setPosts(fetchedPosts);
@@ -54,14 +102,21 @@ const MyPosts = () => {
     return () => unsubscribe();
   }, [user, activeTab]);
 
+  const handleView = (postId) => {
+    navigate(`/post/${postId}`);
+  };
+
+  const handleEdit = (postId) => {
+    navigate(`/dashboard/edit-post/${postId}`);
+  };
+
   const handleDelete = async (postId) => {
-    if (window.confirm('Are you sure you want to delete this post?')) {
-      try {
-        await deleteDoc(doc(db, 'posts', postId));
-      } catch (error) {
-        console.error('Error deleting post:', error);
-        setError('Failed to delete post');
-      }
+    try {
+      await deleteDoc(doc(db, 'posts', postId));
+      setDeleteModal({ isOpen: false, postId: null, postTitle: '' });
+    } catch (error) {
+      console.error('Error deleting post:', error);
+      setError('Failed to delete post');
     }
   };
 
@@ -84,6 +139,13 @@ const MyPosts = () => {
       transition={{ duration: 0.5 }}
       className="bg-white rounded-lg shadow"
     >
+      <DeleteConfirmationModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, postId: null, postTitle: '' })}
+        onConfirm={() => handleDelete(deleteModal.postId)}
+        postTitle={deleteModal.postTitle}
+      />
+
       {/* Tabs */}
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex" aria-label="Tabs">
@@ -176,19 +238,25 @@ const MyPosts = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex justify-end space-x-2">
                         <button
+                          onClick={() => handleView(post.id)}
                           className="text-indigo-600 hover:text-indigo-900"
                           title="View"
                         >
                           <HiEye className="h-5 w-5" />
                         </button>
                         <button
+                          onClick={() => handleEdit(post.id)}
                           className="text-blue-600 hover:text-blue-900"
                           title="Edit"
                         >
                           <HiPencil className="h-5 w-5" />
                         </button>
                         <button
-                          onClick={() => handleDelete(post.id)}
+                          onClick={() => setDeleteModal({ 
+                            isOpen: true, 
+                            postId: post.id,
+                            postTitle: post.title
+                          })}
                           className="text-red-600 hover:text-red-900"
                           title="Delete"
                         >
