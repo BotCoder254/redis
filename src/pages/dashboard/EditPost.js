@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { HiUpload, HiCheck, HiX, HiLightBulb, HiEye, HiPencil } from 'react-icons/hi';
 import { useAuth } from '../../context/AuthContext';
 import { db, storage } from '../../config/firebase';
@@ -7,7 +7,10 @@ import {
   doc,
   getDoc,
   updateDoc,
-  serverTimestamp 
+  serverTimestamp,
+  onSnapshot,
+  collection,
+  addDoc 
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -17,6 +20,8 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
+import CollaboratorsSection from '../../components/blog/CollaboratorsSection';
+import ActivityLog from '../../components/blog/ActivityLog';
 
 const CATEGORIES = [
   'Technology',
@@ -30,9 +35,9 @@ const CATEGORIES = [
 ];
 
 const EditPost = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
   const { postId } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [tags, setTags] = useState('');
@@ -45,37 +50,43 @@ const EditPost = () => {
   const [publishingStatus, setPublishingStatus] = useState('');
   const [isPreview, setIsPreview] = useState(false);
   const [originalPost, setOriginalPost] = useState(null);
+  const [collaborators, setCollaborators] = useState([]);
+  const [canEdit, setCanEdit] = useState(false);
 
   useEffect(() => {
-    const fetchPost = async () => {
-      try {
-        const postRef = doc(db, 'posts', postId);
-        const postSnap = await getDoc(postRef);
+    if (!user || !postId) return;
 
-        if (postSnap.exists()) {
-          const postData = postSnap.data();
-          setOriginalPost(postData);
-          setTitle(postData.title);
-          setContent(postData.content);
-          setTags(postData.tags.join(', '));
-          setCategory(postData.category);
-          setImagePreviews(postData.imageUrls || []);
-          setImages([]);
-        } else {
-          setError('Post not found');
-        }
-      } catch (error) {
-        console.error('Error fetching post:', error);
-        setError('Failed to load post');
-      } finally {
+    const postRef = doc(db, 'posts', postId);
+    const unsubscribe = onSnapshot(postRef, (doc) => {
+      if (!doc.exists()) {
+        setError('Post not found');
         setLoading(false);
+        return;
       }
-    };
 
-    if (postId) {
-      fetchPost();
-    }
-  }, [postId]);
+      const postData = doc.data();
+      setTitle(postData.title);
+      setContent(postData.content);
+      setTags(postData.tags.join(','));
+      setCategory(postData.category);
+      setImagePreviews(postData.imageUrls || []);
+      setCollaborators(postData.collaborators || []);
+
+      // Check if user is the owner or has edit permissions
+      const userCollaborator = postData.collaborators?.find(c => c.userId === user.uid);
+      const isOwner = postData.authorId === user.uid;
+      const canEditPost = isOwner || userCollaborator?.role === 'OWNER' || userCollaborator?.role === 'EDITOR';
+      setCanEdit(canEditPost);
+
+      if (!canEditPost) {
+        setError('You do not have permission to edit this post');
+      }
+
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [postId, user]);
 
   const handleImageChange = (e) => {
     const files = Array.from(e.target.files);
@@ -106,24 +117,26 @@ const EditPost = () => {
     setTimeout(() => setPublishingStatus(''), 3000);
   };
 
-  const handleSubmit = async (e, isDraft = false) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canEdit) {
+      setError('You do not have permission to edit this post');
+      return;
+    }
+
     setLoading(true);
     setError('');
     setSuccess(false);
 
     try {
       updatePublishingStatus('Uploading images...');
-      const newImageUrls = await Promise.all(
+      const imageUrls = await Promise.all(
         images.map(async (image) => {
           const imageRef = ref(storage, `blog-images/${Date.now()}-${image.name}`);
           await uploadBytes(imageRef, image);
           return getDownloadURL(imageRef);
         })
       );
-
-      // Combine existing and new image URLs
-      const allImageUrls = [...(originalPost.imageUrls || []), ...newImageUrls];
 
       updatePublishingStatus('Updating post...');
       const postRef = doc(db, 'posts', postId);
@@ -132,21 +145,37 @@ const EditPost = () => {
         content: content.trim(),
         tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
         category,
-        imageUrls: allImageUrls,
+        imageUrls: [...imagePreviews, ...imageUrls],
         updatedAt: serverTimestamp(),
-        status: isDraft ? 'draft' : 'published',
+        collaborators: collaborators.map(c => ({
+          userId: c.userId,
+          email: c.email,
+          role: c.role,
+          addedAt: c.addedAt || serverTimestamp()
+        })),
+        lastModified: serverTimestamp(),
+        lastModifiedBy: user.uid
+      });
+
+      // Log the edit activity
+      await addDoc(collection(db, 'posts', postId, 'activityLog'), {
+        type: 'content_edited',
+        timestamp: serverTimestamp(),
+        userId: user.uid,
+        userEmail: user.email,
+        action: 'Updated post content'
       });
 
       setSuccess(true);
-      updatePublishingStatus(isDraft ? 'Saved as draft!' : 'Updated successfully!');
+      updatePublishingStatus('Updated successfully!');
       
       setTimeout(() => {
-        navigate('/dashboard/my-posts');
+        navigate(`/dashboard/posts/${postId}`);
       }, 2000);
 
     } catch (error) {
       console.error('Error updating post:', error);
-      setError('Failed to update post. Please try again.');
+      setError('Failed to update post: ' + error.message);
       updatePublishingStatus('');
     } finally {
       setLoading(false);
@@ -176,39 +205,54 @@ const EditPost = () => {
     );
   }
 
+  if (!canEdit) {
+    return (
+      <div className="text-center py-8">
+        <h2 className="text-2xl font-bold text-red-600">Access Denied</h2>
+        <p className="mt-2 text-gray-600">You do not have permission to edit this post.</p>
+      </div>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="bg-white rounded-lg shadow p-6"
+      exit={{ opacity: 0, y: -20 }}
+      className="max-w-4xl mx-auto p-6"
     >
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">Edit Post</h2>
-
-      {/* Status Messages */}
-      {publishingStatus && (
-        <div className={`mb-4 p-3 rounded ${
-          success ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-        }`}>
-          <div className="flex items-center">
-            {success ? (
-              <HiCheck className="h-5 w-5 mr-2" />
-            ) : (
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500 mr-2" />
-            )}
-            {publishingStatus}
-          </div>
-        </div>
-      )}
+      <h1 className="text-3xl font-bold mb-8">Edit Post</h1>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded flex items-center">
-          <HiX className="h-5 w-5 mr-2" />
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
           {error}
         </div>
       )}
 
-      <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-6">
+      {success && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+          Post updated successfully!
+        </div>
+      )}
+
+      {publishingStatus && (
+        <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-4">
+          {publishingStatus}
+        </div>
+      )}
+
+      <div className="flex justify-end space-x-4 mb-6">
+        <button
+          type="button"
+          onClick={() => setIsPreview(!isPreview)}
+          className="flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+        >
+          {isPreview ? <HiPencil className="mr-2" /> : <HiEye className="mr-2" />}
+          {isPreview ? 'Edit' : 'Preview'}
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
         <div>
           <label htmlFor="title" className="block text-sm font-medium text-gray-700">
             Title *
@@ -350,19 +394,27 @@ const EditPost = () => {
           <p className="mt-2 text-xs text-gray-500">PNG, JPG, GIF up to 5MB each</p>
         </div>
 
-        <div className="flex justify-end space-x-3">
-          <button
-            type="button"
-            onClick={(e) => handleSubmit(e, true)}
-            disabled={loading}
-            className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Save as Draft
-          </button>
+        {/* Add Collaborators Section */}
+        <div className="mt-8 border rounded-lg p-6 bg-white shadow-sm">
+          <h2 className="text-xl font-semibold mb-4">Manage Collaborators</h2>
+          <CollaboratorsSection
+            postId={postId}
+            collaborators={collaborators}
+            setCollaborators={setCollaborators}
+          />
+        </div>
+
+        {/* Show Activity Log */}
+        <div className="mt-8 border rounded-lg p-6 bg-white shadow-sm">
+          <h2 className="text-xl font-semibold mb-4">Activity Log</h2>
+          <ActivityLog postId={postId} />
+        </div>
+
+        <div className="flex justify-end mt-6">
           <button
             type="submit"
             disabled={loading}
-            className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
           >
             {loading ? 'Updating...' : 'Update Post'}
           </button>

@@ -7,6 +7,12 @@ import {
   query,
   where,
   onSnapshot,
+  getDoc,
+  updateDoc,
+  doc,
+  deleteDoc,
+  addDoc,
+  serverTimestamp
 } from 'firebase/firestore';
 import {
   AreaChart,
@@ -39,9 +45,24 @@ const Analytics = () => {
   const [viewsData, setViewsData] = useState([]);
   const [categoryData, setCategoryData] = useState([]);
   const [engagementData, setEngagementData] = useState([]);
+  const [pendingInvites, setPendingInvites] = useState([]);
 
   useEffect(() => {
     if (!user) return;
+
+    // Fetch collaboration invites
+    const invitesQuery = query(
+      collection(db, 'collaborationInvites'),
+      where('inviteeEmail', '==', user.email)
+    );
+
+    const invitesUnsubscribe = onSnapshot(invitesQuery, (snapshot) => {
+      const invites = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setPendingInvites(invites);
+    });
 
     // Simplified query to avoid index requirement
     const postsQuery = query(
@@ -112,8 +133,51 @@ const Analytics = () => {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      invitesUnsubscribe();
+      unsubscribe();
+    };
   }, [user]);
+
+  const handleInviteResponse = async (invite, accept) => {
+    try {
+      if (accept) {
+        // Add user as collaborator to the post
+        const postRef = doc(db, 'posts', invite.postId);
+        const postDoc = await getDoc(postRef);
+        
+        if (!postDoc.exists()) {
+          console.error('Post not found');
+          return;
+        }
+        
+        // Get current collaborators or initialize empty array
+        const currentCollaborators = postDoc.data().collaborators || [];
+        
+        await updateDoc(postRef, {
+          collaborators: [...currentCollaborators, {
+            userId: user.uid,
+            email: user.email,
+            role: invite.role,
+            addedAt: serverTimestamp()
+          }]
+        });
+
+        // Log the activity
+        await addDoc(collection(db, 'posts', invite.postId, 'activityLog'), {
+          type: 'collaborator_added',
+          timestamp: serverTimestamp(),
+          userId: user.uid,
+          action: `Accepted collaboration invite as ${invite.role}`
+        });
+      }
+
+      // Delete the invitation
+      await deleteDoc(doc(db, 'collaborationInvites', invite.id));
+    } catch (error) {
+      console.error('Error handling invite:', error);
+    }
+  };
 
   const StatCard = ({ icon: Icon, title, value }) => (
     <motion.div
@@ -149,6 +213,41 @@ const Analytics = () => {
 
   return (
     <div className="p-6 space-y-8">
+      {/* Collaboration Invites Section */}
+      {pendingInvites.length > 0 && (
+        <div className="bg-white p-6 rounded-lg shadow-lg mb-8">
+          <h3 className="text-lg font-semibold mb-4">Pending Collaboration Invites</h3>
+          <div className="space-y-4">
+            {pendingInvites.map((invite) => (
+              <div
+                key={invite.id}
+                className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
+              >
+                <div>
+                  <p className="font-medium">{invite.postTitle}</p>
+                  <p className="text-sm text-gray-600">From: {invite.inviterEmail}</p>
+                  <p className="text-sm text-gray-600">Role: {invite.role}</p>
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => handleInviteResponse(invite, true)}
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    onClick={() => handleInviteResponse(invite, false)}
+                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                  >
+                    Decline
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard icon={HiDocumentText} title="Total Posts" value={stats.totalPosts} />

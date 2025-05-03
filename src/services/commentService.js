@@ -2,7 +2,8 @@ import { db } from '../config/firebase';
 import { 
   collection, 
   addDoc, 
-  getDocs, 
+  getDocs,
+  getDoc,
   deleteDoc, 
   doc, 
   updateDoc, 
@@ -14,19 +15,31 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 
-export const addComment = async (postId, commentData, parentId = null) => {
+export const addComment = async (postId, commentData) => {
   try {
-    const commentRef = collection(db, 'posts', postId, 'comments');
+    const commentsRef = collection(db, 'posts', postId, 'comments');
     const newComment = {
       ...commentData,
-      parentId,
-      createdAt: serverTimestamp(),
-      likes: 0,
+      likes: [],
       likedBy: [],
       replies: [],
-      isExpanded: true
+      depth: commentData.parentId ? 1 : 0,
+      path: [],
+      createdAt: serverTimestamp()
     };
-    const docRef = await addDoc(commentRef, newComment);
+
+    if (commentData.parentId) {
+      const parentRef = doc(db, 'posts', postId, 'comments', commentData.parentId);
+      const parentDoc = await getDoc(parentRef);
+      
+      if (parentDoc.exists()) {
+        const parentData = parentDoc.data();
+        newComment.depth = (parentData.depth || 0) + 1;
+        newComment.path = [...(parentData.path || []), commentData.parentId];
+      }
+    }
+
+    const docRef = await addDoc(commentsRef, newComment);
     return { id: docRef.id, ...newComment };
   } catch (error) {
     console.error('Error adding comment:', error);
@@ -38,11 +51,16 @@ export const getComments = async (postId) => {
   try {
     const commentsRef = collection(db, 'posts', postId, 'comments');
     const q = query(commentsRef, orderBy('createdAt', 'desc'));
-    const querySnapshot = await getDocs(q);
+    const snapshot = await getDocs(q);
     
     const comments = {};
-    querySnapshot.docs.forEach(doc => {
-      comments[doc.id] = { id: doc.id, ...doc.data() };
+    snapshot.docs.forEach(doc => {
+      comments[doc.id] = {
+        id: doc.id,
+        ...doc.data(),
+        replies: [],
+        createdAt: doc.data().createdAt?.toDate()
+      };
     });
 
     // Build comment tree
@@ -55,7 +73,21 @@ export const getComments = async (postId) => {
           comments[comment.parentId].replies = [];
         }
         comments[comment.parentId].replies.push(comment);
+        
+        // Sort replies by timestamp
+        comments[comment.parentId].replies.sort((a, b) => {
+          const dateA = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
+          const dateB = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
+          return dateA - dateB;
+        });
       }
+    });
+
+    // Sort root comments by timestamp
+    commentTree.sort((a, b) => {
+      const dateA = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
+      const dateB = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
+      return dateB - dateA;
     });
 
     return commentTree;
@@ -70,8 +102,8 @@ export const deleteComment = async (postId, commentId) => {
     const commentRef = doc(db, 'posts', postId, 'comments', commentId);
     await updateDoc(commentRef, {
       _isDeleted: true,
-      content: '[deleted]',
-      authorName: '[deleted]',
+      content: '[Deleted]',
+      authorName: '[Deleted]',
       authorImage: null
     });
   } catch (error) {
@@ -109,9 +141,7 @@ export const unlikeComment = async (postId, commentId, userId) => {
 export const toggleCommentExpansion = async (postId, commentId, isExpanded) => {
   try {
     const commentRef = doc(db, 'posts', postId, 'comments', commentId);
-    await updateDoc(commentRef, {
-      isExpanded
-    });
+    await updateDoc(commentRef, { isExpanded });
   } catch (error) {
     console.error('Error toggling comment expansion:', error);
     throw error;

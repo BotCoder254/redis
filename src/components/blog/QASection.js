@@ -8,7 +8,8 @@ import {
   HiOutlineThumbUp,
   HiFlag,
   HiX,
-  HiPencil
+  HiPencil,
+  HiOutlinePlusCircle
 } from 'react-icons/hi';
 import { db } from '../../config/firebase';
 import { 
@@ -40,70 +41,57 @@ const QASection = ({ postId, authorId }) => {
   const [editContent, setEditContent] = useState('');
   const [sortBy, setSortBy] = useState('recent');
   const [filter, setFilter] = useState('all');
+  const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
-    const questionsQuery = query(
-      collection(db, 'posts', postId, 'questions'),
-      orderBy('createdAt', 'desc')
-    );
+    if (!postId) return;
 
-    const unsubscribe = onSnapshot(questionsQuery, (snapshot) => {
+    // Check if user is post owner
+    const postRef = doc(db, 'posts', postId);
+    const unsubscribePost = onSnapshot(postRef, (doc) => {
+      if (doc.exists()) {
+        const postData = doc.data();
+        setIsOwner(postData.authorId === user?.uid);
+      }
+    });
+
+    // Fetch questions
+    const questionsQuery = query(collection(db, 'posts', postId, 'questions'));
+    const unsubscribeQuestions = onSnapshot(questionsQuery, (snapshot) => {
       const questionsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate().toLocaleString(),
-        likes: doc.data().likes || 0,
-        likedBy: doc.data().likedBy || [],
-        isReported: doc.data().isReported || false,
-        reports: doc.data().reports || 0
+        createdAt: doc.data().createdAt?.toDate()
       }));
-
-      // Apply sorting
-      const sortedQuestions = [...questionsData].sort((a, b) => {
-        if (sortBy === 'recent') {
-          return new Date(b.createdAt) - new Date(a.createdAt);
-        } else if (sortBy === 'likes') {
-          return b.likes - a.likes;
-        }
-        return 0;
-      });
-
-      // Apply filtering
-      const filteredQuestions = sortedQuestions.filter(q => {
-        if (filter === 'all') return true;
-        if (filter === 'answered') return q.isAnswered;
-        if (filter === 'unanswered') return !q.isAnswered;
-        return true;
-      });
-
-      setQuestions(filteredQuestions);
+      setQuestions(questionsData);
       setLoading(false);
     });
 
-    return () => unsubscribe();
-  }, [postId, sortBy, filter]);
+    return () => {
+      unsubscribePost();
+      unsubscribeQuestions();
+    };
+  }, [postId, user]);
 
   const handleSubmitQuestion = async (e) => {
     e.preventDefault();
-    if (!user || !newQuestion.trim()) return;
+    if (!user || !isOwner) return;
 
     try {
-      await addDoc(collection(db, 'posts', postId, 'questions'), {
-        content: newQuestion.trim(),
+      const questionRef = await addDoc(collection(db, 'posts', postId, 'questions'), {
+        text: newQuestion.trim(),
         authorId: user.uid,
         authorName: user.displayName || user.email,
         authorImage: user.photoURL,
         createdAt: serverTimestamp(),
-        isAnswered: false,
-        likes: 0,
-        likedBy: [],
-        isReported: false,
-        reports: 0
+        likes: [],
+        isAnswered: false
       });
+
       setNewQuestion('');
     } catch (error) {
       console.error('Error adding question:', error);
-      setError('Failed to submit question');
+      setError('Failed to add question');
     }
   };
 
@@ -224,22 +212,36 @@ const QASection = ({ postId, authorId }) => {
         </div>
       </div>
 
-      {user && (
+      {error && (
+        <div className="bg-red-50 text-red-700 p-3 rounded-lg">
+          {error}
+        </div>
+      )}
+
+      {isOwner && (
         <form onSubmit={handleSubmitQuestion} className="space-y-4">
-          <textarea
-            value={newQuestion}
-            onChange={(e) => setNewQuestion(e.target.value)}
-            placeholder="Ask a question... (Markdown supported)"
-            className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            rows="3"
-          />
-          <button
-            type="submit"
-            disabled={!newQuestion.trim()}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Submit Question
-          </button>
+          <div>
+            <label htmlFor="question" className="block text-sm font-medium text-gray-700">
+              Add a Question
+            </label>
+            <textarea
+              id="question"
+              value={newQuestion}
+              onChange={(e) => setNewQuestion(e.target.value)}
+              className="mt-1 block w-full border border-gray-300 rounded-lg shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              rows="3"
+              placeholder="Type your question here..."
+              required
+            />
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              Add Question
+            </button>
+          </div>
         </form>
       )}
 
@@ -262,7 +264,7 @@ const QASection = ({ postId, authorId }) => {
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="font-medium">{question.authorName}</h4>
-                    <span className="text-sm text-gray-500">{question.createdAt}</span>
+                    <span className="text-sm text-gray-500">{question.createdAt?.toLocaleString()}</span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <button
@@ -285,7 +287,7 @@ const QASection = ({ postId, authorId }) => {
                         <button
                           onClick={() => {
                             setEditingQuestion(question.id);
-                            setEditContent(question.content);
+                            setEditContent(question.text);
                           }}
                           className="text-gray-500 hover:text-gray-700"
                         >
@@ -339,7 +341,7 @@ const QASection = ({ postId, authorId }) => {
                   </div>
                 ) : (
                   <div className="mt-2 prose prose-sm max-w-none">
-                    <ReactMarkdown>{question.content}</ReactMarkdown>
+                    <ReactMarkdown>{question.text}</ReactMarkdown>
                   </div>
                 )}
               </div>
@@ -420,7 +422,7 @@ const QASection = ({ postId, authorId }) => {
 
         {questions.length === 0 && (
           <div className="text-center py-8 text-gray-500">
-            No questions yet. Be the first to ask!
+            {isOwner ? 'Add your first question!' : 'No questions available yet.'}
           </div>
         )}
       </div>

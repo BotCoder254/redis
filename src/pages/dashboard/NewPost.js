@@ -18,6 +18,8 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
+import CollaboratorsSection from '../../components/blog/CollaboratorsSection';
+import ActivityLog from '../../components/blog/ActivityLog';
 
 const CATEGORIES = [
   'Technology',
@@ -49,6 +51,15 @@ const NewPost = () => {
   const [suggestions, setSuggestions] = useState([]);
   const [generatedContents, setGeneratedContents] = useState([]);
   const [isPreview, setIsPreview] = useState(false);
+  const [collaborators, setCollaborators] = useState([
+    {
+      userId: user?.uid,
+      email: user?.email,
+      role: 'OWNER',
+      addedAt: new Date()
+    }
+  ]);
+  const [postId, setPostId] = useState(null);
 
   const handleImageChange = (e) => {
     const files = Array.from(e.target.files);
@@ -182,7 +193,7 @@ const NewPost = () => {
     setTimeout(() => setPublishingStatus(''), 3000);
   };
 
-  const handleSubmit = async (e, isDraft = false) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
@@ -210,20 +221,33 @@ const NewPost = () => {
         authorImage: user.photoURL,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        status: isDraft ? 'draft' : 'published',
+        status: 'published',
         views: 0,
         likes: 0,
         comments: [],
+        collaborators: collaborators.map(c => ({
+          userId: c.userId,
+          email: c.email,
+          role: c.role,
+          addedAt: serverTimestamp()
+        })),
+        createdBy: user.uid,
+        lastModified: serverTimestamp(),
       };
 
-      const docRef = await addDoc(collection(db, 'posts'), postData);
-      
-      await updateDoc(doc(db, 'posts', docRef.id), {
-        postId: docRef.id
+      const postRef = await addDoc(collection(db, 'posts'), postData);
+      setPostId(postRef.id);
+
+      // Log the post creation activity
+      await addDoc(collection(db, 'posts', postRef.id, 'activityLog'), {
+        type: 'content_edited',
+        timestamp: serverTimestamp(),
+        userId: user.uid,
+        action: 'Created post'
       });
 
       setSuccess(true);
-      updatePublishingStatus(isDraft ? 'Saved as draft!' : 'Published successfully!');
+      updatePublishingStatus('Published successfully!');
       
       setTimeout(() => {
         setTitle('');
@@ -233,12 +257,12 @@ const NewPost = () => {
         setImages([]);
         setImagePreviews([]);
         setSuccess(false);
-        navigate('/dashboard/my-posts');
+        navigate(`/dashboard/posts/${postRef.id}`);
       }, 2000);
 
     } catch (error) {
       console.error('Error creating post:', error);
-      setError('Failed to create post. Please try again.');
+      setError('Failed to create post: ' + error.message);
       updatePublishingStatus('');
     } finally {
       setLoading(false);
@@ -310,7 +334,7 @@ const NewPost = () => {
         )}
       </AnimatePresence>
 
-      <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6">
         <div>
           <label htmlFor="title" className="block text-sm font-medium text-gray-700">
             Title *
@@ -570,14 +594,6 @@ const NewPost = () => {
 
         <div className="flex justify-end space-x-3">
           <button
-            type="button"
-            onClick={(e) => handleSubmit(e, true)}
-            disabled={loading}
-            className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Save as Draft
-          </button>
-          <button
             type="submit"
             disabled={loading}
             className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -586,6 +602,22 @@ const NewPost = () => {
           </button>
         </div>
       </form>
+
+      {/* Add Collaborators Section */}
+      <div className="mt-8">
+        <CollaboratorsSection
+          postId={postId}
+          collaborators={collaborators}
+          setCollaborators={setCollaborators}
+        />
+      </div>
+
+      {/* Show Activity Log if post is saved */}
+      {postId && (
+        <div className="mt-8">
+          <ActivityLog postId={postId} />
+        </div>
+      )}
     </motion.div>
   );
 };
